@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sistema de Estacionamiento Inteligente</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .header {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+        h1 {
+            color: #333;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            font-size: 1.2em;
+        }
+        .main-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+        }
+        .video-section {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        #frame {
+            width: 100%;
+            height: auto;
+            border-radius: 10px;
+            border: 3px solid #ddd;
+            max-height: 500px;
+            object-fit: contain;
+            background: #f0f0f0;
+        }
+        .status-section {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .status-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        .status-indicator {
+            text-align: center;
+            padding: 30px;
+            border-radius: 10px;
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-bottom: 20px;
+            transition: all 0.3s ease;
+        }
+        .status-libre {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+        }
+        .status-ocupado {
+            background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+            color: white;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .stat-box {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            border-left: 4px solid #667eea;
+        }
+        .stat-label {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 10px;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #333;
+        }
+        .co2-section {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+        .co2-value {
+            font-size: 3em;
+            font-weight: bold;
+            text-align: center;
+            margin: 15px 0;
+        }
+        .detections-list {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 15px;
+        }
+        .detection-item {
+            background: #e7f3ff;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-left: 4px solid #007bff;
+        }
+        .message-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-weight: 500;
+        }
+        .controls {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+        .control-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .control-btn {
+            padding: 12px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: transform 0.2s;
+        }
+        .control-btn:hover {
+            transform: translateY(-2px);
+        }
+        .btn-ocupado {
+            background: #28a745;
+            color: white;
+        }
+        .btn-libre {
+            background: #dc3545;
+            color: white;
+        }
+        @media (max-width: 1200px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+            .control-buttons {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚗 Sistema de Estacionamiento Inteligente</h1>
+            <div class="subtitle">Detección en Tiempo Real con IA</div>
+        </div>
+        
+        <div class="main-grid">
+            <div class="video-section">
+                <h2 style="margin-bottom: 15px;">📹 Cámara en Vivo</h2>
+                <img id="frame" src="" alt="Stream de video">
+                
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <div class="stat-label">Detecciones Activas</div>
+                        <div class="stat-value" id="detection-count">0</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">Tiempo de Proceso</div>
+                        <div class="stat-value" id="process-time">0ms</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">FPS</div>
+                        <div class="stat-value" id="fps">0</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">Estado Conexión</div>
+                        <div class="stat-value" id="connection-status" style="color: #28a745;">●</div>
+                    </div>
+                </div>
+                
+                <div>
+                    <h3 style="margin-top: 20px;">Objetos Detectados:</h3>
+                    <div id="detection-list" class="detections-list">
+                        <p style="color: #666; text-align: center; padding: 20px;">Esperando detecciones...</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="status-section">
+                <div class="status-card">
+                    <h2 style="margin-bottom: 15px;">Estado del Espacio</h2>
+                    <div id="status-indicator" class="status-indicator status-libre">
+                        LIBRE
+                    </div>
+                    <div id="message-box" class="message-box" style="display: none;"></div>
+                    
+                    <div class="controls">
+                        <h4 style="margin-bottom: 10px; color: #666;">🔧 Control Manual (Pruebas)</h4>
+                        <div class="control-buttons">
+                            <button onclick="forceDetection('on')" class="control-btn btn-ocupado">
+                                ✅ Forzar OCUPADO
+                            </button>
+                            <button onclick="forceDetection('off')" class="control-btn btn-libre">
+                                ❌ Forzar LIBRE
+                            </button>
+                        </div>
+                        <div style="margin-top: 10px; font-size: 0.85em; color: #666; text-align: center;">
+                            Usa estos botones si el modelo no detecta correctamente
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="status-card">
+                    <h2 style="margin-bottom: 15px;">⏱️ Tiempo de Estacionamiento</h2>
+                    <div style="text-align: center; font-size: 3em; font-weight: bold; color: #667eea; margin: 20px 0;">
+                        <span id="parking-time">00:00:00</span>
+                    </div>
+                </div>
+                
+                <div class="status-card">
+                    <div class="co2-section">
+                        <h2 style="margin-bottom: 10px;">🌱 CO₂ No Emitido</h2>
+                        <div style="font-size: 0.9em; opacity: 0.9; margin-bottom: 10px;">
+                            Ahorro ambiental por estacionamiento
+                        </div>
+                        <div class="co2-value">
+                            <span id="co2-saved">0</span>
+                            <span style="font-size: 0.5em;">g</span>
+                        </div>
+                        <div style="text-align: center; font-size: 0.9em; opacity: 0.9;">
+                            Equivalente a <span id="co2-trees">0</span> min de absorción de un árbol
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let frameCount = 0;
+        let lastTime = Date.now();
+        let isConnected = true;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 5;
+        
+        function formatTime(seconds) {
+            const hrs = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        }
+        
+        function updateDisplay() {
+            fetch('/get_detection')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.frame_base64) {
+                        document.getElementById('frame').src = 'data:image/jpeg;base64,' + data.frame_base64;
+                        document.getElementById('connection-status').style.color = '#38ef7d';
+                        isConnected = true;
+                        reconnectAttempts = 0;
+                        
+                        // Actualizar estado
+                        const statusIndicator = document.getElementById('status-indicator');
+                        const messageBox = document.getElementById('message-box');
+                        
+                        if (data.car_detected) {
+                            statusIndicator.className = 'status-indicator status-ocupado';
+                            statusIndicator.textContent = '🚗 OCUPADO';
+                            messageBox.style.display = 'block';
+                            messageBox.innerHTML = '⚠️ <strong>VEHÍCULO DETECTADO</strong><br>El automóvil está estacionado en el espacio';
+                        } else {
+                            statusIndicator.className = 'status-indicator status-libre';
+                            statusIndicator.textContent = '✓ LIBRE';
+                            messageBox.style.display = 'none';
+                        }
+                        
+                        // Tiempo de estacionamiento
+                        document.getElementById('parking-time').textContent = formatTime(data.total_parking_time);
+                        
+                        // CO2 ahorrado
+                        const co2Grams = Math.round(data.co2_saved);
+                        document.getElementById('co2-saved').textContent = co2Grams.toLocaleString();
+                        
+                        // Un árbol absorbe aproximadamente 21.8 kg de CO2 por año (0.041 g/min)
+                        const treesMinutes = Math.round(co2Grams / 0.041);
+                        document.getElementById('co2-trees').textContent = treesMinutes;
+                        
+                        // Estadísticas
+                        document.getElementById('detection-count').textContent = data.detections.length;
+                        document.getElementById('process-time').textContent = data.processing_time + 'ms';
+                        
+                        // FPS
+                        frameCount++;
+                        const currentTime = Date.now();
+                        if (currentTime - lastTime >= 1000) {
+                            document.getElementById('fps').textContent = frameCount;
+                            frameCount = 0;
+                            lastTime = currentTime;
+                        }
+                        
+                        // Detecciones
+                        const detectionList = document.getElementById('detection-list');
+                        if (data.detections.length > 0) {
+                            detectionList.innerHTML = data.detections.map(det => `
+                                <div class="detection-item">
+                                    <span><strong>${det.class.toUpperCase()}</strong></span>
+                                    <span style="font-size: 1.2em; font-weight: bold;">${(det.confidence * 100).toFixed(1)}%</span>
+                                </div>
+                            `).join('');
+                        } else {
+                            detectionList.innerHTML = '<p style="color: #666; text-align: center; padding: 20px;">No se detectaron objetos</p>';
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Error actualizando display:', error);
+                    isConnected = false;
+                    document.getElementById('connection-status').style.color = '#f45c43';
+                    
+                    // Intentar reconectar
+                    if (reconnectAttempts < maxReconnectAttempts) {
+                        reconnectAttempts++;
+                        console.log(`Intento de reconexión ${reconnectAttempts}/${maxReconnectAttempts}`);
+                        setTimeout(updateDisplay, 2000);
+                    }
+                });
+        }
+        
+        function forceDetection(status) {
+            fetch(`/force_detection/${status}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    alert(data.message);
+                    updateDisplay();
+                })
+                .catch(error => {
+                    console.error('Error forzando detección:', error);
+                    alert('Error al forzar detección. Verifica la conexión con el servidor.');
+                });
+        }
+        
+        // Iniciar actualización periódica
+        setInterval(updateDisplay, 100);
+        
+        // Actualizar inmediatamente al cargar
+        updateDisplay();
+    </script>
+</body>
+</html>
