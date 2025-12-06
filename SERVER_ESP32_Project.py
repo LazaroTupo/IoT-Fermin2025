@@ -18,6 +18,23 @@ model = YOLO(MODEL_PATH)
 # Cola para procesar frames
 frame_queue = queue.Queue(maxsize=10)
 
+# ========================================
+# CONFIGURACIÓN DE ZONA DE ESTACIONAMIENTO FIJA
+# ========================================
+PARKING_ZONE = {
+    "x1": 260,    # Ajusta estos valores según la imagen
+    "y1": 80,
+    "x2": 470,
+    "y2": 400,
+    "color_libre": (0, 255, 0),      # Verde cuando está libre
+    "color_ocupado": (0, 0, 255),    # Rojo cuando está ocupado
+    "color_mal_estacionado": (0, 165, 255),  # Naranja cuando está mal estacionado
+    "thickness": 3
+}
+
+# Porcentaje mínimo de solapamiento para considerar "bien estacionado"
+OVERLAP_THRESHOLD = 0.70  # 70% del carro debe estar dentro de la zona
+
 # Variables globales mejoradas
 latest_detection = {
     "timestamp": None,
@@ -28,12 +45,40 @@ latest_detection = {
     "parking_status": "LIBRE",
     "parking_start_time": None,
     "total_parking_time": 0,
-    "co2_saved": 0
+    "co2_saved": 0,
+    "mal_estacionado": False
 }
 
 # Constantes para cálculo de CO2
 CO2_PER_HOUR_KG = 2.3
-CO2_PER_SECOND_G = (CO2_PER_HOUR_KG * 1000) / 3600  # gramos por segundo
+CO2_PER_SECOND_G = (CO2_PER_HOUR_KG * 1000) / 3600
+
+def calculate_overlap(box1, box2):
+    """
+    Calcula el área de solapamiento entre dos cajas
+    box1: [x1, y1, x2, y2] - detección del carro
+    box2: [x1, y1, x2, y2] - zona de estacionamiento
+    Retorna el porcentaje del box1 que está dentro del box2
+    """
+    x1_inter = max(box1[0], box2[0])
+    y1_inter = max(box1[1], box2[1])
+    x2_inter = min(box1[2], box2[2])
+    y2_inter = min(box1[3], box2[3])
+    
+    if x2_inter < x1_inter or y2_inter < y1_inter:
+        return 0.0
+    
+    # Área de intersección
+    intersection = (x2_inter - x1_inter) * (y2_inter - y1_inter)
+    
+    # Área del box1 (detección)
+    box1_area = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    
+    if box1_area == 0:
+        return 0.0
+    
+    # Porcentaje de solapamiento
+    return intersection / box1_area
 
 def process_frames():
     """Hilo para procesar frames con YOLO"""
@@ -43,7 +88,8 @@ def process_frames():
     print("\n🏷️  Clases disponibles en el modelo:")
     for idx, name in model.names.items():
         print(f"   [{idx}] {name}")
-    print()
+    print(f"\n📍 Zona de estacionamiento: ({PARKING_ZONE['x1']}, {PARKING_ZONE['y1']}) -> ({PARKING_ZONE['x2']}, {PARKING_ZONE['y2']})")
+    print(f"🎯 Umbral de solapamiento: {OVERLAP_THRESHOLD * 100}%\n")
     
     while True:
         try:
@@ -64,6 +110,11 @@ def process_frames():
             detections = []
             annotated_frame = frame.copy()
             car_detected = False
+            car_detected_in_zone = False
+            mal_estacionado = False
+            
+            parking_box = [PARKING_ZONE['x1'], PARKING_ZONE['y1'], 
+                          PARKING_ZONE['x2'], PARKING_ZONE['y2']]
             
             for result in results:
                 boxes = result.boxes
@@ -73,48 +124,89 @@ def process_frames():
                     cls = int(box.cls[0].cpu().numpy())
                     label = model.names[cls]
                     
-                    print(f"🔍 Detectado: {label} (confianza: {conf:.2f})")
+                    detection_box = [int(x1), int(y1), int(x2), int(y2)]
                     
                     detections.append({
                         "class": label,
                         "confidence": round(conf, 2),
-                        "bbox": [int(x1), int(y1), int(x2), int(y2)]
+                        "bbox": detection_box
                     })
                     
-                    # Verificar si es un carro
+                    # Verificar si es un vehículo
                     label_lower = label.lower()
                     car_keywords = ['car', 'carro', 'auto', 'automovil', 'vehicle', 
                                   'truck', 'camion', 'van', 'bus', 'suv']
                     
-                    if any(keyword in label_lower for keyword in car_keywords):
-                        car_detected = True
-                        print(f"✅ VEHÍCULO DETECTADO: {label}")
+                    is_vehicle = any(keyword in label_lower for keyword in car_keywords)
                     
-                    # Dibujar en el frame
-                    color = (0, 255, 0) if car_detected else (255, 0, 0)
-                    cv2.rectangle(annotated_frame, (int(x1), int(y1)), 
-                                (int(x2), int(y2)), color, 2)
-                    cv2.putText(annotated_frame, f"{label} {conf:.2f}", 
-                              (int(x1), int(y1-10)), 
-                              cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                    if is_vehicle:
+                        car_detected = True
+                        
+                        # Calcular solapamiento con la zona de estacionamiento
+                        overlap = calculate_overlap(detection_box, parking_box)
+                        
+                        print(f"🔍 Detectado: {label} (confianza: {conf:.2f}, solapamiento: {overlap*100:.1f}%)")
+                        
+                        if overlap >= OVERLAP_THRESHOLD:
+                            # Carro bien estacionado (dentro de la zona)
+                            car_detected_in_zone = True
+                            print(f"✅ VEHÍCULO BIEN ESTACIONADO: {label}")
+                        elif overlap > 0:
+                            # Carro parcialmente en la zona (mal estacionado)
+                            mal_estacionado = True
+                            print(f"⚠️ VEHÍCULO MAL ESTACIONADO: {label} (solo {overlap*100:.1f}% dentro)")
+                        else:
+                            # Carro completamente fuera de la zona
+                            print(f"❌ VEHÍCULO FUERA DE LA ZONA: {label}")
+                        
+                        # NO DIBUJAR el bounding box individual del carro
+                        # Solo mostramos el rectángulo fijo de la zona
+            
+            # Dibujar SOLO la ZONA DE ESTACIONAMIENTO FIJA
+            if car_detected_in_zone:
+                # Bien estacionado - zona en rojo
+                zone_color = PARKING_ZONE['color_ocupado']
+                status_text = "OCUPADO"
+            elif mal_estacionado:
+                # Mal estacionado - zona en naranja
+                zone_color = PARKING_ZONE['color_mal_estacionado']
+                status_text = "MAL ESTACIONADO"
+            else:
+                # Libre - zona en verde
+                zone_color = PARKING_ZONE['color_libre']
+                status_text = "LIBRE"
+            
+            cv2.rectangle(annotated_frame, 
+                         (PARKING_ZONE['x1'], PARKING_ZONE['y1']),
+                         (PARKING_ZONE['x2'], PARKING_ZONE['y2']),
+                         zone_color, 
+                         PARKING_ZONE['thickness'])
+            
+            # Agregar etiqueta a la zona
+            cv2.putText(annotated_frame, f"ZONA: {status_text}", 
+                       (PARKING_ZONE['x1'], PARKING_ZONE['y1'] - 10),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, zone_color, 2)
             
             # Actualizar estado de estacionamiento
             current_time = datetime.now()
             
-            if car_detected:
+            if car_detected_in_zone:
                 if latest_detection["parking_start_time"] is None:
-                    # Carro recién detectado
                     latest_detection["parking_start_time"] = current_time
                     latest_detection["parking_status"] = "OCUPADO"
+                    latest_detection["mal_estacionado"] = False
                 else:
-                    # Calcular tiempo de estacionamiento
                     elapsed = (current_time - latest_detection["parking_start_time"]).total_seconds()
                     latest_detection["total_parking_time"] = elapsed
                     latest_detection["co2_saved"] = elapsed * CO2_PER_SECOND_G
             else:
-                # No hay carro detectado
                 latest_detection["parking_start_time"] = None
-                latest_detection["parking_status"] = "LIBRE"
+                if mal_estacionado:
+                    latest_detection["parking_status"] = "MAL ESTACIONADO"
+                    latest_detection["mal_estacionado"] = True
+                else:
+                    latest_detection["parking_status"] = "LIBRE"
+                    latest_detection["mal_estacionado"] = False
                 latest_detection["total_parking_time"] = 0
                 latest_detection["co2_saved"] = 0
             
@@ -130,7 +222,7 @@ def process_frames():
                 "detections": detections,
                 "frame_base64": frame_base64,
                 "processing_time": round(processing_time, 2),
-                "car_detected": car_detected
+                "car_detected": car_detected_in_zone
             })
             
         except queue.Empty:
@@ -162,7 +254,8 @@ def detect():
                 "status": "processing",
                 "message": "Frame received",
                 "car_detected": latest_detection["car_detected"],
-                "parking_status": latest_detection["parking_status"]
+                "parking_status": latest_detection["parking_status"],
+                "mal_estacionado": latest_detection.get("mal_estacionado", False)
             })
         except queue.Full:
             return jsonify({
@@ -183,9 +276,10 @@ def get_car_status():
     response = {
         "car_detected": latest_detection["car_detected"],
         "parking_status": latest_detection["parking_status"],
-        "parking_time": latest_detection["total_parking_time"]
+        "parking_time": latest_detection["total_parking_time"],
+        "mal_estacionado": latest_detection.get("mal_estacionado", False)
     }
-    print(f"📤 ESP32 consultó estado: car_detected={response['car_detected']}")
+    print(f"📤 ESP32 consultó estado: car_detected={response['car_detected']}, status={response['parking_status']}")
     return jsonify(response)
 
 @app.route('/force_detection/<status>', methods=['GET'])
@@ -195,14 +289,32 @@ def force_detection(status):
     if status == "on":
         latest_detection["car_detected"] = True
         latest_detection["parking_status"] = "OCUPADO"
+        latest_detection["mal_estacionado"] = False
         if latest_detection["parking_start_time"] is None:
             latest_detection["parking_start_time"] = datetime.now()
         return jsonify({"message": "Detección FORZADA a ON", "car_detected": True})
     else:
         latest_detection["car_detected"] = False
         latest_detection["parking_status"] = "LIBRE"
+        latest_detection["mal_estacionado"] = False
         latest_detection["parking_start_time"] = None
         return jsonify({"message": "Detección FORZADA a OFF", "car_detected": False})
+
+@app.route('/set_zone', methods=['POST'])
+def set_zone():
+    """Endpoint para ajustar la zona de estacionamiento dinámicamente"""
+    global PARKING_ZONE
+    data = request.json
+    
+    PARKING_ZONE['x1'] = data.get('x1', PARKING_ZONE['x1'])
+    PARKING_ZONE['y1'] = data.get('y1', PARKING_ZONE['y1'])
+    PARKING_ZONE['x2'] = data.get('x2', PARKING_ZONE['x2'])
+    PARKING_ZONE['y2'] = data.get('y2', PARKING_ZONE['y2'])
+    
+    return jsonify({
+        "message": "Zona actualizada",
+        "zone": PARKING_ZONE
+    })
 
 if __name__ == '__main__':
     print("=" * 60)
@@ -212,5 +324,6 @@ if __name__ == '__main__':
     print(f"🌐 Dashboard: http://localhost:5000")
     print(f"🔌 API: http://localhost:5000/detect")
     print(f"🚗 Estado: http://localhost:5000/get_car_status")
+    print(f"📍 Zona: ({PARKING_ZONE['x1']}, {PARKING_ZONE['y1']}) -> ({PARKING_ZONE['x2']}, {PARKING_ZONE['y2']})")
     print("=" * 60)
     app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
